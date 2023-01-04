@@ -3,6 +3,8 @@ g++ -o main main.cpp \
   -I/usr/X11/include -L/usr/X11/lib -lX11 -lGL -lpng -lpthread -std=c++17
 */
 
+
+#include <chrono>
 #include <thread>
 #include <iostream> // TODO: Remove both include iostream and using std
 
@@ -11,6 +13,8 @@ g++ -o main main.cpp \
 
 #define PIX_X 2
 #define PIX_Y 2
+
+using namespace std::chrono_literals;
 
 int nScreenWidth = 80;
 int nScreenHeight = 30;
@@ -32,18 +36,17 @@ private:
     int nFieldHeight = 18;
     unsigned char *pField = nullptr;
 
-    // Rotate: Determines the position of the pieces of the tetromino depending on what rotation it's in
+    // Rotate: Given the current rotation and the x and y values of asset space, returns the appropriate element at the asset space after factoring in a rotation
+    // px: x val of asset space, py: y val of asset space, r: current rotation
     int Rotate(int px, int py, int r) {
-        /*
-        Equations for tetromino rotation are as follows
+    /*
+        Equations for tetromino rotation are as follows. Here, w = 4
         
         0)   i = y * w + x
         90)  i = 12 + y - (x * w)
         180) i = 15 - (y * w) - x
         270) i = 3 - y + (x * w)
-        */
-        
-        // here, w = 4
+    */
 
         int pi = 0;
         switch (r % 4) {
@@ -64,7 +67,7 @@ private:
         return pi;
     }
 
-    // DoesPieceFit: 
+    // DoesPieceFit: Given a tetromino piece and its current rotation, nPosX, nPosY
     bool DoesPieceFit(int nTetromino, int nRotation, int nPosX, int nPosY) {
 
         // px, py: Each tetromino is 4x4. This nested for loop iterates over the space each tetromino occupies.
@@ -90,10 +93,17 @@ private:
         return true;
     }
 
-    int nCurrentPiece = 0;
-    int nCurrentRotation = 0;
-    int nCurrentX = nFieldWidth/2;
-    int nCurrentY = 0;
+    int nCurrentPiece = 0;          // nCurrentPiece: in array of tetromino pieces, this is the index value of the current piece
+    int nCurrentRotation = 0;       // nCurrentRotation: angle that piece is currently rotated
+    int nCurrentX = nFieldWidth/2;  // nCurrentX: 
+    int nCurrentY = 0;              // nCurrentY: 
+    int nSpeed = 20;                // nSpeed: 
+    int nSpeedCount = 0;            // nSpeedCount: 
+    bool bForceDown = false;        // bForceDown: 
+    bool bRotateHold = true;        // bRotateHold: Flag for if the player is holding down the rotate key.
+    int nPieceCount = 0;            // nPieceCount: 
+    std::vector<int> vLines;        // vLines: 
+    bool bGameOver = false;         // bGameOver: 
 
 protected:
 
@@ -147,11 +157,80 @@ protected:
             }
         }
 
-    return true;
+        int flagToReturn = 0;
+        if (flagToReturn == 1)
+            std::cout << "Flag to return is 1, OnUserCreate" << std::endl;
+            return true;
 
     }
 
     // OnUserUpdate
+    virtual bool OnUserUpdate(float fElapsedTime) {
+        // TIMING ============================================
+
+		std::this_thread::sleep_for(50ms); // Small Step = 1 Game Tick
+        nSpeedCount++;
+        bForceDown = (nSpeedCount == nSpeed);
+
+        // INPUT =============================================
+
+        // Handle player movement
+        auto key_touched = [=]( olc::Key nKey ) {
+            return (GetKey( nKey ).bPressed || GetKey( nKey ).bHeld);
+        };
+
+        if (key_touched( olc::Key::RIGHT ) && DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX + 1, nCurrentY )) {
+                nCurrentX = nCurrentX + 1;
+        }
+        if (key_touched( olc::Key::LEFT ) && DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX - 1, nCurrentY )) {
+                nCurrentX = nCurrentX - 1;
+        }
+        if (key_touched( olc::Key::DOWN ) && DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX, nCurrentY + 1 )) {
+                nCurrentY = nCurrentY + 1;
+        }
+
+        // Handling rotation
+		if (key_touched( olc::Key::Z )) {
+			nCurrentRotation += (bRotateHold && DoesPieceFit(nCurrentPiece, nCurrentRotation + 1, nCurrentX, nCurrentY)) ? 1 : 0;
+			bRotateHold = false;
+		}
+		else
+			bRotateHold = true;
+
+
+        // GAME LOGIC ========================================
+
+        // DISPLAY ===========================================
+
+        Clear(olc::BLACK);
+
+        // lambda to emulate CGE's Draw() call
+        auto CGE_Draw = [=](int x, int y, char c) {
+            DrawString(x * 8, y * 8, std::string(1, c));
+        };
+
+        // Draws field
+        for (int x = 0; x < nFieldWidth; x++)
+            for (int y = 0; y <nFieldHeight; y++)
+                CGE_Draw(x + 2, y + 2, " ABCDEFG=#"[pField[y*nFieldWidth+x]] );
+
+        // Draw current piece
+        for (int px = 0; px < 4; px++)  // These 2 for loops loop over the entire 4x4 space occupied by a piece
+			for (int py = 0; py < 4; py++)
+				if (tetromino[nCurrentPiece][Rotate(px, py, nCurrentRotation)] != '.')
+                    // If space isn't empty, CGE_Draw() draws correct ASCII piece at appropriate X and Y
+                    // X arg = nCurrentX (updated by user input) + px (place in asset space) + an offset of 2
+                    // Y arg = nCurrentY (updated by user input) + py (place in asset space) + an offset of 2
+                    CGE_Draw( nCurrentX + px + 2, nCurrentY + py + 2, nCurrentPiece + 65 );
+
+
+        int flagToReturn = 0;
+        if (flagToReturn == 1)
+            std::cout << "Flag to return is 1, OnUserCreate" << std::endl;
+            return true;
+
+
+    }
 
 };
 
