@@ -1,11 +1,12 @@
 /*
-g++ -o main main.cpp \
+g++ -Wall -o main main.cpp \
   -I/usr/X11/include -L/usr/X11/lib -lX11 -lGL -lpng -lpthread -std=c++17
 */
 
-
 #include <chrono>
 #include <thread>
+#include <time.h>
+#include <stdlib.h>
 #include <iostream> // TODO: Remove both include iostream and using std
 
 #define OLC_PGE_APPLICATION
@@ -93,21 +94,23 @@ private:
         return true;
     }
 
-    int nCurrentPiece = 0;          // nCurrentPiece: in array of tetromino pieces, this is the index value of the current piece
+    int nCurrentPiece = rand() % 7; // nCurrentPiece: in array of tetromino pieces, this is the index value of the current piece
     int nCurrentRotation = 0;       // nCurrentRotation: angle that piece is currently rotated
-    int nCurrentX = nFieldWidth/2;  // nCurrentX: 
-    int nCurrentY = 0;              // nCurrentY: 
-    int nSpeed = 20;                // nSpeed: 
-    int nSpeedCount = 0;            // nSpeedCount: 
-    bool bForceDown = false;        // bForceDown: 
-    bool bRotateHold = true;        // bRotateHold: Flag for if the player is holding down the rotate key.
-    int nPieceCount = 0;            // nPieceCount: 
+    int nCurrentX = nFieldWidth/2;  // nCurrentX: Top left corner of the current piece
+    int nCurrentY = 0;              // nCurrentY: Top left corner of the current piece
+    int nSpeed = 20;                // nSpeed: Current level/difficulty of the game
+    int nSpeedCount = 0;            // nSpeedCount: When the number of game ticks equals this value, we want to force the piece down
+    bool bForceDown = false;        // bForceDown: Flag to check if we're going to force the piece down
+    bool bRotateHold = true;        // bRotateHold: Flag to check if the player is holding down the rotate key.
     std::vector<int> vLines;        // vLines: 
     bool bGameOver = false;         // bGameOver: 
+    int nPieceCount = 0;            // nPieceCount: Keeps track of how many pieces have been delivered to the player
+                                    // Every 10 pieces, we'll increase the speed
+
 
 protected:
 
-    // OnUserCreate
+    // ON USER CREATE
     virtual bool OnUserCreate() {
 
         // Create assets - 4x4 tetronimos
@@ -157,15 +160,15 @@ protected:
             }
         }
 
-        int flagToReturn = 0;
-        if (flagToReturn == 1)
-            std::cout << "Flag to return is 1, OnUserCreate" << std::endl;
-            return true;
+        // if (bGameOver)
+        //     std::cout << "Game Over in OnUserCreate" << std::endl;
+        //     return true;
 
     }
 
-    // OnUserUpdate
+    // ON USER UPDATE
     virtual bool OnUserUpdate(float fElapsedTime) {
+
         // TIMING ============================================
 
 		std::this_thread::sleep_for(50ms); // Small Step = 1 Game Tick
@@ -197,8 +200,58 @@ protected:
 		else
 			bRotateHold = true;
 
-
         // GAME LOGIC ========================================
+
+        // When bForceDown == true, force the piece down until it can't be forced down
+        if (bForceDown) {
+
+            //Update difficulty every 50 pieces
+            nSpeedCount = 0;  
+            nPieceCount++;
+            if (nPieceCount % 50 == 0)
+                if (nSpeed >= 10)
+                    nSpeed--;
+
+            if (DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX, nCurrentY+1)) {
+                nCurrentY++;
+
+            } else {
+
+                // Piece can no longer be forced down. Then, lock piece in place.
+                for (int px = 0; px < 4; px++)
+                    for (int py = 0; py < 4; py++)
+                        if (tetromino[nCurrentPiece][Rotate(px, py, nCurrentRotation)] != '.')
+                            pField[(nCurrentY + py) * nFieldWidth + (nCurrentX + px)] = nCurrentPiece + 1;
+                
+                // Check for lines
+                // Only need to check for where the last piece was placed. For loop first goes down the cols of the asset space
+                for (int py = 0; py < 4; py++)
+                    if (nCurrentY + py < nFieldHeight - 1) { // So long as we're in bounds
+                        bool bLine = true;  // Start by assuming that there is a line
+
+                        for (int px = 1; px < nFieldWidth - 1; px++)
+                            bLine &= (pField[(nCurrentY+py) * nFieldWidth + px]) != 0; // bLine set to false if there is an empty space
+
+                        if (bLine) {
+                            for (int px = 1; px < nFieldWidth - 1; px++)
+                                pField[(nCurrentY + py) * nFieldWidth + px] = 8;
+                            vLines.push_back(nCurrentY + py); 
+                        }
+                    }
+
+                nScore += 25;
+                if (!vLines.empty()) nScore += (1 << vLines.size()) * 100;
+
+                // Choose next piece
+                nCurrentX = nFieldWidth / 2;
+                nCurrentY = 0;
+                nCurrentRotation = 0;
+                nCurrentPiece = rand() % 7;
+
+                // If piece does not fit, game over
+                bGameOver = !DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX, nCurrentY);
+            }
+        }
 
         // DISPLAY ===========================================
 
@@ -218,16 +271,29 @@ protected:
         for (int px = 0; px < 4; px++)  // These 2 for loops loop over the entire 4x4 space occupied by a piece
 			for (int py = 0; py < 4; py++)
 				if (tetromino[nCurrentPiece][Rotate(px, py, nCurrentRotation)] != '.')
-                    // If space isn't empty, CGE_Draw() draws correct ASCII piece at appropriate X and Y
+                    // If space isn't empty, CGE_Draw() draws correct ASCII char at appropriate X and Y
                     // X arg = nCurrentX (updated by user input) + px (place in asset space) + an offset of 2
                     // Y arg = nCurrentY (updated by user input) + py (place in asset space) + an offset of 2
                     CGE_Draw( nCurrentX + px + 2, nCurrentY + py + 2, nCurrentPiece + 65 );
 
+        // Draw score
+        std::string sScore = "SCORE: " + std::to_string( nScore );
+        DrawString( (nFieldWidth + 6) * 8, 2 * 8, sScore );
 
-        int flagToReturn = 0;
-        if (flagToReturn == 1)
-            std::cout << "Flag to return is 1, OnUserCreate" << std::endl;
-            return true;
+        // Use vLines to check for lines
+        if (!vLines.empty()) {
+            for (auto &v : vLines)
+                for (int px = 1; px < nFieldWidth - 1; px++) {
+                    for (int py = v; py > 0; py--)
+                        pField[py * nFieldWidth + px] = pField[(py-1) * nFieldWidth + px];
+                    pField[px] = 0;
+                }
+            vLines.clear();
+        }
+
+        // if (bGameOver)
+        //     std::cout << "Game Over in OnUserUpdate" << std::endl;
+        //     return true;
 
 
     }
@@ -235,7 +301,9 @@ protected:
 };
 
 int main() {
-    
+    // inits random seed
+    srand( time( NULL ) );
+
     // use olcConcolseGameEngine derived app
     Tetris_PGE game;
     game.Construct(nScreenWidth * 8, nScreenHeight * 8, PIX_X, PIX_Y);
