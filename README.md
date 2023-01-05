@@ -1,5 +1,6 @@
 # command-line-tetris
 The game of tetris made in the command line.
+Made using this tutorial: https://www.youtube.com/watch?v=8OK8_tHeCIA
 
 Copyright notice for using olcPixelGameEngine: 
 
